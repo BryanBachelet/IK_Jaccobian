@@ -191,7 +191,7 @@ namespace IK.Tools
     public class JacobianMatrix
     {
 
-        public float[,] value;
+        public double[,] value;
         public int rows;
         public int column;
 
@@ -200,7 +200,7 @@ namespace IK.Tools
         {
             rows = rowSize;
             column = columnSize;
-            value = new float[rowSize, columnSize];
+            value = new double[rowSize, columnSize];
         }
 
 
@@ -212,6 +212,20 @@ namespace IK.Tools
                 for (int j = 0; j < columnSize; j++)
                 {
                     value[indexRow + i, indexColunm + j] = values[i, j];
+                }
+            }
+        }
+
+        public void AddData(double[][]values, int rowSize, int columnSize, int indexColunm, int indexRow = 0)
+        {
+            rows = rowSize;
+            column = columnSize;
+            value = new double[rowSize, columnSize];
+            for (int i = 0; i < rowSize; i++)
+            {
+                for (int j = 0; j < columnSize; j++)
+                {
+                    value[indexRow + i, indexColunm + j] = values[i][j];
                 }
             }
         }
@@ -233,9 +247,9 @@ namespace IK.Tools
 
         public void Transpose()
         {
-            float[,] tempValue = new float[rows, column];
+            double[,] tempValue = new double[rows, column];
             tempValue = value;
-            value = new float[column, rows];
+            value = new double[column, rows];
             for (int i = 0; i < rows; i++)
             {
                 for (int j = 0; j < column; j++)
@@ -249,9 +263,9 @@ namespace IK.Tools
         }
 
 
-        public static float[] operator *(JacobianMatrix a, Vector6 b)
+        public static double[] operator *(JacobianMatrix a, Vector6 b)
         {
-            float[] values = new float[a.rows];
+            double[] values = new double[a.rows];
             for (int i = 0; i < a.rows; i++)
             {
                 for (int j = 0; j < b.values.Length; j++)
@@ -294,6 +308,22 @@ namespace IK.Tools
             return jacobianMatrix;
         }
 
+        public double[][] ConvertMatInArray()
+        {
+            double[][] newMat = new double[rows][];
+            for (int i = 0; i < rows; i++)
+            {
+                newMat[i] = new double[column];
+
+                for (int j = 0; j < column; j++)
+                {
+                    newMat[i][j] = value[i, j];
+                }
+
+            }
+
+            return newMat;
+        }
 
         //public JacobianMatrix Inverse()
         //{

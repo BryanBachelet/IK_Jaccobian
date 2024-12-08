@@ -7,13 +7,23 @@ using IK.Tools;
 public class Jacobian_IK : MonoBehaviour
 {
     public int iterationCount = 20;
-    public LineRenderer line;
-    public Transform targetTransform;
+    
+    private Transform m_contextualTargetTransform;
+    public bool HasContextualTarget;
+    public bool hasContextualTargetClose;
+    public Transform generalTargetTransform;
+    private Transform m_currentTargeTransform;
+
+
+    [Header("Contextual Target Variable")]
+    public bool isTargetVariationActive = true;
+    public float distanceToDetect = 5;
+
     public Transform[] joints = new Transform[3];
     public Transform endEffectorTransform;
 
     public float maxDistance;
-    private float m_minDistance = .2f;
+    public float m_minDistance = .2f;
     private const int m_minAngleOrientation = 10;
 
     private float m_iterations;
@@ -30,11 +40,16 @@ public class Jacobian_IK : MonoBehaviour
     /// Active the genenic jaccobian algorithm.
     /// </summary>
     public bool isGenericJacobianActive;
+    [SerializeField] private bool isDebugActive;
 
     #region Unity Functions
     // Start is called before the first frame update
+
+
     void Start()
     {
+        m_currentTargeTransform = generalTargetTransform;
+
         // Creation of array for angles delta for each joint
         m_anglesXArray = new float[joints.Length];
         m_anglesYArray = new float[joints.Length];
@@ -65,17 +80,31 @@ public class Jacobian_IK : MonoBehaviour
             m_baseAnglesZ[i] = joints[i].localRotation.eulerAngles.z;
         }
 
-        // Setup line render for feedback
-        if (line) line.positionCount = joints.Length;
+
     }
 
     // Update is called once per frame
     void Update()
     {
-        // Set up the line render position for a visual feedback if necessary 
-        for (int i = 0; i < joints.Length; i++)
+
+        if(m_contextualTargetTransform !=null)
         {
-            if (line) line.SetPosition(i, joints[i].position);
+            float contextualTargetDistance = Vector3.Distance(transform.position, m_contextualTargetTransform.position);
+            if(contextualTargetDistance < distanceToDetect)
+            {
+                m_currentTargeTransform = m_contextualTargetTransform;
+                hasContextualTargetClose = true;
+            }
+            else
+            {
+                m_currentTargeTransform = generalTargetTransform;
+                hasContextualTargetClose = false;
+            }
+            
+        }
+        else
+        {
+            m_currentTargeTransform = generalTargetTransform;
         }
 
         // Reset iterations count
@@ -101,7 +130,7 @@ public class Jacobian_IK : MonoBehaviour
     private void JacobianIKOnlySpace()
     {
 
-        while (IsEndEffectorIsTooFar() && IsEnoughIteration() &&  IsTargetCloseEnough() )
+        while (IsEndEffectorIsTooFar() && IsEnoughIteration() && IsTargetCloseEnough())
         {
             // Calcul the delta orientation values
             float[] dO = GetDeltaOrientation();
@@ -113,29 +142,10 @@ public class Jacobian_IK : MonoBehaviour
 
                 int indexAngle = i * 3;
                 JointContraint jointContraint = joints[i].GetComponent<JointContraint>();
-                if (jointContraint.xState != AxisState.LOCK)
-                {
-                    m_anglesXArray[i] += dO[indexAngle] * Time.deltaTime;
 
-                    if (jointContraint.xState == AxisState.CLAMP)
-                        m_anglesXArray[i] = Mathf.Clamp(m_anglesXArray[i], m_baseAnglesX[i] + jointContraint.xNegatifAngle, m_baseAnglesX[i] + jointContraint.xPositifAngle);
-                }
-
-                if (jointContraint.yState != AxisState.LOCK)
-                {
-                    m_anglesYArray[i] += dO[indexAngle + 1] * Time.deltaTime;
-
-                    if (jointContraint.yState == AxisState.CLAMP)
-                        m_anglesYArray[i] = Mathf.Clamp(m_anglesYArray[i], m_baseAnglesY[i] + jointContraint.yNegatifAngle, m_baseAnglesY[i] + jointContraint.yPositifAngle);
-                }
-
-                if (jointContraint.zState != AxisState.LOCK)
-                {
-                    m_anglesZArray[i] += dO[indexAngle + 2] * Time.deltaTime;
-
-                    if (jointContraint.zState == AxisState.CLAMP)
-                        m_anglesZArray[i] = Mathf.Clamp(m_anglesZArray[i], m_baseAnglesZ[i] + jointContraint.zNegatifAngle, m_baseAnglesZ[i] + jointContraint.zPositifAngle);
-                }
+                m_anglesXArray[i] = (float)jointContraint.ClampJoint(m_anglesXArray[i], dO[indexAngle] * Time.deltaTime, Axis.X);
+                m_anglesYArray[i] = (float)jointContraint.ClampJoint(m_anglesYArray[i], dO[indexAngle + 1] * Time.deltaTime, Axis.Y);
+                m_anglesZArray[i] = (float)jointContraint.ClampJoint(m_anglesZArray[i], dO[indexAngle + 2] * Time.deltaTime, Axis.Z);
 
                 joints[i].localRotation = Quaternion.Euler(m_anglesXArray[i], m_anglesYArray[i], m_anglesZArray[i]);
 
@@ -155,7 +165,7 @@ public class Jacobian_IK : MonoBehaviour
     {
 
 
-        while (Mathf.Abs((endEffectorTransform.position - targetTransform.position).magnitude) > m_minDistance && m_iterations < iterationCount && Vector3.Distance(joints[joints.Length - 1].transform.position, targetTransform.position) < maxDistance)
+        while (Mathf.Abs((endEffectorTransform.position - m_currentTargeTransform.position).magnitude) > m_minDistance && m_iterations < iterationCount && Vector3.Distance(joints[joints.Length - 1].transform.position, m_currentTargeTransform.position) < maxDistance)
         {
             float[] dO = GetDeltaOrientation();
 
@@ -165,30 +175,10 @@ public class Jacobian_IK : MonoBehaviour
 
                 int indexAngle = i * 3;
                 JointContraint jointContraint = joints[i].GetComponent<JointContraint>();
-                if (jointContraint.xState != AxisState.LOCK)
-                {
-                    m_anglesXArray[i] += dO[indexAngle] * Time.deltaTime;
 
-                    if (jointContraint.xState == AxisState.CLAMP)
-                        m_anglesXArray[i] = Mathf.Clamp(m_anglesXArray[i], m_baseAnglesX[i] + jointContraint.xNegatifAngle, m_baseAnglesX[i] + jointContraint.xPositifAngle);
-                }
-
-                if (jointContraint.yState != AxisState.LOCK)
-                {
-                    m_anglesYArray[i] += dO[indexAngle + 1] * Time.deltaTime;
-
-                    if (jointContraint.yState == AxisState.CLAMP)
-                        m_anglesYArray[i] = Mathf.Clamp(m_anglesYArray[i], m_baseAnglesY[i] + jointContraint.yNegatifAngle, m_baseAnglesY[i] + jointContraint.yPositifAngle);
-                }
-
-                if (jointContraint.zState != AxisState.LOCK)
-                {
-                    m_anglesZArray[i] += dO[indexAngle + 2] * Time.deltaTime;
-
-                    if (jointContraint.zState == AxisState.CLAMP)
-                        m_anglesZArray[i] = Mathf.Clamp(m_anglesZArray[i], m_baseAnglesZ[i] + jointContraint.zNegatifAngle, m_baseAnglesZ[i] + jointContraint.zPositifAngle);
-                }
-
+                m_anglesXArray[i] = (float)jointContraint.ClampJoint(m_anglesXArray[i], dO[indexAngle] * Time.deltaTime, Axis.X);
+                m_anglesYArray[i] = (float)jointContraint.ClampJoint(m_anglesYArray[i], dO[indexAngle + 1] * Time.deltaTime, Axis.Y);
+                m_anglesZArray[i] = (float)jointContraint.ClampJoint(m_anglesZArray[i], dO[indexAngle + 2] * Time.deltaTime, Axis.Z);
                 joints[i].localRotation = Quaternion.Euler(m_anglesXArray[i], m_anglesYArray[i], m_anglesZArray[i]);
 
             }
@@ -199,42 +189,11 @@ public class Jacobian_IK : MonoBehaviour
                 int indexAngle = i * 3;
                 JointContraint jointContraint = joints[i].GetComponent<JointContraint>();
 
-                m_anglesXArray[i] += dO1[indexAngle] * Time.deltaTime;
-                m_anglesYArray[i] += dO1[indexAngle + 1] * Time.deltaTime;
-                m_anglesZArray[i] += dO1[indexAngle + 2] * Time.deltaTime;
-                if (i == 0)
-                {
-                    joints[i].rotation = targetTransform.rotation;
-                }
-                else
-                {
-                    joints[i].localRotation = Quaternion.Euler(m_anglesXArray[i], m_anglesYArray[i], m_anglesZArray[i]);
 
-                }
+                m_anglesXArray[i] = (float)jointContraint.ClampJoint(m_anglesXArray[i], dO1[indexAngle] * Time.deltaTime, Axis.X);
+                m_anglesYArray[i] = (float)jointContraint.ClampJoint(m_anglesYArray[i], dO1[indexAngle + 1] * Time.deltaTime, Axis.Y);
+                m_anglesZArray[i] = (float)jointContraint.ClampJoint(m_anglesZArray[i], dO1[indexAngle + 2] * Time.deltaTime, Axis.Z);
 
-                //    //if (jointContraint.xState != AxisState.LOCK)
-                //    //{
-                //    //    Ox[i] += dO[indexAngle + 3] * Time.deltaTime;
-
-                //    //    if (jointContraint.xState == AxisState.CLAMP)
-                //    //        Ox[i] = Mathf.Clamp(Ox[i], baseX[i] + jointContraint.xNegatifAngle, baseX[i] + jointContraint.xPositifAngle);
-                //    //}
-
-                //    //if (jointContraint.yState != AxisState.LOCK)
-                //    //{
-                //    //    Oy[i] += dO[indexAngle + 4] * Time.deltaTime;
-
-                //    //    if (jointContraint.yState == AxisState.CLAMP)
-                //    //        Oy[i] = Mathf.Clamp(Oy[i], baseY[i] + jointContraint.yNegatifAngle, baseY[i] + jointContraint.yPositifAngle);
-                //    //}
-
-                //    //if (jointContraint.zState != AxisState.LOCK)
-                //    //{
-
-
-                //    //    if (jointContraint.zState == AxisState.CLAMP)
-                //    //        Oz[i] = Mathf.Clamp(Oz[i], baseZ[i] + jointContraint.zNegatifAngle, baseZ[i] + jointContraint.zPositifAngle);
-                //    //}
 
             }
             m_iterations++;
@@ -248,34 +207,34 @@ public class Jacobian_IK : MonoBehaviour
     /// </summary>
     private void GenericJacobianAll()
     {
-        float angle = 100;
+        float angle = 0;
         Vector3 axis = Vector3.zero;
         float angleEndEff = 0;
         float angleTarget = 0;
 
         // Try to calcul the difference in angle between the two rotation
-        Quaternion quat = Quaternion.Inverse(targetTransform.rotation) * endEffectorTransform.rotation;
+        Quaternion quat = Quaternion.Inverse(m_currentTargeTransform.rotation) * endEffectorTransform.rotation;
         quat.ToAngleAxis(out angle, out axis);
 
         endEffectorTransform.rotation.ToAngleAxis(out angleEndEff, out axis);
-        targetTransform.rotation.ToAngleAxis(out angleTarget, out axis);
+        m_currentTargeTransform.rotation.ToAngleAxis(out angleTarget, out axis);
 
         angle = angleTarget - angleEndEff;
 
-        while ((IsEndEffectorIsTooFar() || IsOrientationIsTooFar(angle)) && IsEnoughIteration() && IsTargetCloseEnough())
+        while ( (IsEndEffectorIsTooFar() || IsOrientationIsTooFar(angle)) && IsEnoughIteration() && IsTargetCloseEnough())
         {
 
             // Creation of Jaccobian matrix
             JacobianMatrix jacobianMatrix = GenericJacobian.CreateGenericJacobian(joints.Length, joints);
 
-            // Not sure about the calcul of the linear and angular velocity
-            quat = Quaternion.Inverse(targetTransform.rotation) * endEffectorTransform.rotation;
-            quat.ToAngleAxis(out angle, out axis);
-            Vector3 angularVelocity = (quat.eulerAngles);
-            Vector3 linearVelocity = (targetTransform.position - endEffectorTransform.position);
+            // Not sure about the calcul of the linear and angular error
+            quat = Quaternion.Inverse(m_currentTargeTransform.rotation) * endEffectorTransform.rotation;
+            Matrix4x4 mat = Matrix4x4.Rotate(m_currentTargeTransform.rotation).transpose * Matrix4x4.Rotate(endEffectorTransform.rotation);
+            Vector3 angularError = (quat.eulerAngles);
+            Vector3 linearError = (m_currentTargeTransform.position - endEffectorTransform.position);
 
-            // Multiply the jaccobian matrix by the twist (linear velocity and angularVelocity)
-            float[] dO = GenericJacobian.GetDeltaValues(linearVelocity, angularVelocity, jacobianMatrix);
+            // Multiply the jaccobian matrix by the twist (linear error and angular Error)
+            double[] dO = GenericJacobian.GetDeltaValues(linearError, angularError, jacobianMatrix);
 
 
             // Apply the orientation for each joint
@@ -286,41 +245,18 @@ public class Jacobian_IK : MonoBehaviour
 
                 float deltaTime = Time.deltaTime / iterationCount;
 
-                if (jointContraint.xState != AxisState.LOCK)
-                {
-                    m_anglesXArray[i] += dO[indexAngle] * deltaTime;
-                    m_anglesXArray[i] += dO[indexAngle + 3] * deltaTime;
-
-                    if (jointContraint.xState == AxisState.CLAMP)
-                        m_anglesXArray[i] = Mathf.Clamp(m_anglesXArray[i], m_baseAnglesX[i] + jointContraint.xNegatifAngle, m_baseAnglesX[i] + jointContraint.xPositifAngle);
-                }
-
-                if (jointContraint.yState != AxisState.LOCK)
-                {
-                    m_anglesYArray[i] += dO[indexAngle + 1] * deltaTime;
-                    m_anglesYArray[i] += dO[indexAngle + 4] * deltaTime;
-
-                    if (jointContraint.yState == AxisState.CLAMP)
-                        m_anglesYArray[i] = Mathf.Clamp(m_anglesYArray[i], m_baseAnglesY[i] + jointContraint.yNegatifAngle, m_baseAnglesY[i] + jointContraint.yPositifAngle);
-                }
-
-                if (jointContraint.zState != AxisState.LOCK)
-                {
-                    m_anglesZArray[i] += dO[indexAngle + 2] * deltaTime;
-                    m_anglesZArray[i] += dO[indexAngle + 5] * deltaTime;
-
-                    if (jointContraint.zState == AxisState.CLAMP)
-                        m_anglesZArray[i] = Mathf.Clamp(m_anglesZArray[i], m_baseAnglesZ[i] + jointContraint.zNegatifAngle, m_baseAnglesZ[i] + jointContraint.zPositifAngle);
-                }
+                m_anglesXArray[i] = (float)jointContraint.ClampJoint(m_anglesXArray[i], dO[indexAngle] * deltaTime + dO[indexAngle + 3] * deltaTime, Axis.X);
+                m_anglesYArray[i] = (float)jointContraint.ClampJoint(m_anglesYArray[i], dO[indexAngle + 1] * deltaTime + dO[indexAngle + 4] * deltaTime, Axis.Y);
+                m_anglesZArray[i] = (float)jointContraint.ClampJoint(m_anglesZArray[i], dO[indexAngle + 2] * deltaTime + dO[indexAngle + 5] * deltaTime, Axis.Z);
 
 
                 Vector3 angleVec = new Vector3(m_anglesXArray[i], m_anglesYArray[i], m_anglesZArray[i]);
-                joints[i].rotation = Quaternion.Euler(angleVec);
+                joints[i].localRotation = Quaternion.Euler(angleVec);
             }
 
             // Re-calcul the value to see if the orientation of the end effector is matching the target orientation
             endEffectorTransform.rotation.ToAngleAxis(out angleEndEff, out axis);
-            targetTransform.rotation.ToAngleAxis(out angleTarget, out axis);
+            m_currentTargeTransform.rotation.ToAngleAxis(out angleTarget, out axis);
             angle = angleTarget - angleEndEff;
 
             m_iterations++;
@@ -329,13 +265,16 @@ public class Jacobian_IK : MonoBehaviour
     }
 
 
+
+
+
     #endregion
 
     #region Jaccobian Calcul Functions
     float[] GetDeltaOrientation()
     {
         SimpleJacobianMatrix Jt = GetJacobianTranspose();
-        Vector3 V = targetTransform.position - endEffectorTransform.position;
+        Vector3 V = m_currentTargeTransform.position - endEffectorTransform.position;
 
         float[] dO = Jt * V;
 
@@ -361,9 +300,9 @@ public class Jacobian_IK : MonoBehaviour
         for (int i = 0; i < joints.Length; i++)
         {
             // Location in spaces
-            Vector3 J_A = Vector3.Cross(joints[i].transform.right, endEffectorPos - joints[i].position);
-            Vector3 J_B = Vector3.Cross(joints[i].transform.up, endEffectorPos - joints[i].position);
-            Vector3 J_C = Vector3.Cross(joints[i].transform.forward, endEffectorPos - joints[i].position);
+            Vector3 J_A = Vector3.Cross(joints[i].transform.right, (endEffectorPos - joints[i].position).normalized);
+            Vector3 J_B = Vector3.Cross(joints[i].transform.up, (endEffectorPos - joints[i].position).normalized);
+            Vector3 J_C = Vector3.Cross(joints[i].transform.forward, (endEffectorPos - joints[i].position).normalized);
 
             J.AddColumn(J_A);
             J.AddColumn(J_B);
@@ -405,7 +344,7 @@ public class Jacobian_IK : MonoBehaviour
     #region Conditions Functions
     private bool IsEndEffectorIsTooFar()
     {
-        return (endEffectorTransform.position - targetTransform.position).magnitude > m_minDistance;
+        return (m_currentTargeTransform.position - endEffectorTransform.position).magnitude > m_minDistance;
     }
 
     private bool IsEnoughIteration()
@@ -415,13 +354,43 @@ public class Jacobian_IK : MonoBehaviour
 
     private bool IsTargetCloseEnough()
     {
-        return Vector3.Distance(joints[joints.Length - 1].transform.position, targetTransform.position) < maxDistance;
+        return Vector3.Distance(joints[joints.Length - 1].transform.position, m_currentTargeTransform.position) < maxDistance;
     }
 
     private bool IsOrientationIsTooFar(float angle)
     {
-       return Mathf.Abs(angle) > m_minAngleOrientation;
+        return Mathf.Abs(angle) > m_minAngleOrientation;
     }
 
     #endregion
+
+
+
+    public void AddContextualTarget(Transform newTarget)
+    {
+        m_contextualTargetTransform = newTarget;
+        HasContextualTarget = true;
+    }
+
+
+    public void RemoveContextualTarget()
+    {
+        m_contextualTargetTransform = null;
+        HasContextualTarget = false;
+    }
+
+   
+
+    public void OnDrawGizmos()
+    {
+
+        if (!isDebugActive) return;
+        float distance = maxDistance;
+
+        Gizmos.DrawRay(joints[joints.Length - 1].position, (m_currentTargeTransform.position - joints[joints.Length - 1].transform.position) * distance);
+
+        Gizmos.DrawCube(m_currentTargeTransform.position, Vector3.one * .3f);
+        Gizmos.DrawCube(endEffectorTransform.position, Vector3.one * .3f);
+
+    }
 }
