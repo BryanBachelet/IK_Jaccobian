@@ -164,6 +164,7 @@
   },
   "active": "2ed57880befa4b80",
   "lastOpenFiles": [
+    "Temp/UnityTempFile-06d694d3f49765f47a3c9774e8a54903",
     "Temp/Bin/Debug",
     "Temp/Bin",
     "Logs/shadercompiler-AssetImportWorker0.log",
@@ -173,7 +174,6 @@
     "Logs/AssetImportWorker1.log",
     "Temp/ADB-Refresh7fd92d2ea2eab65479f2a210f99d8279",
     "Temp/ProcessJobs",
-    "Library/EditorInstance.json",
-    "Logs/shadercompiler-UnityShaderCompiler.exe0.log"
+    "Library/EditorInstance.json"
   ]
 }
